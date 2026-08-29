@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hermes Trading</title>
+<!-- REQUIRED: Telegram WebApp SDK MUST load before any other script -->
+<script src="https://telegram.org/js/telegram-web-app.js?63"></script>
+<style>
+  :root{
+    --fg: var(--foreground,#e8eaed); --mut:#9aa0a6; --acc:#4f8cff; --acc2:#27c08a;
+    --border:#2a2d31; --card:#16181c; --bad:#ff5c5c; --ok:#27c08a; --warn:#ffb02e;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;background:transparent;color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:15px;line-height:1.45}
+  .wrap{padding:10px 12px 16px;max-width:560px}
+  h1{font-size:18px;margin:2px 0 10px;display:flex;align-items:center;gap:8px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--border)}
+  .pill.live{color:var(--ok);border-color:var(--ok)}
+  .pill.stop{color:var(--bad);border-color:var(--bad)}
+  .tabs{display:flex;gap:6px;margin:8px 0 12px;flex-wrap:wrap}
+  .tab{background:var(--card);border:1px solid var(--border);color:var(--mut);
+    padding:6px 12px;border-radius:10px;cursor:pointer;font-size:13px}
+  .tab.active{color:var(--fg);border-color:var(--acc);background:#1d2330}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:10px}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:4px 0}
+  .lbl{color:var(--mut);font-size:13px}
+  .val{font-variant-numeric:tabular-nums;font-weight:600}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .btn{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:10px 14px;
+    font-size:14px;font-weight:600;cursor:pointer;width:100%}
+  .btn.stop{background:var(--bad)} .btn.ok{background:var(--ok)} .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--fg)}
+  .btn:active{opacity:.8}
+  .sig{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:8px}
+  .sig .top{display:flex;justify-content:space-between;align-items:center}
+  .badge{font-size:11px;padding:2px 7px;border-radius:6px;background:#1d2330;color:var(--acc)}
+  .badge.sell{color:var(--warn)} .badge.buy{color:var(--ok)}
+  input[type=number]{width:100%;background:#0e1013;border:1px solid var(--border);color:var(--fg);
+    border-radius:8px;padding:8px 10px;font-size:14px}
+  .seg{display:flex;gap:6px;margin:6px 0}
+  .seg button{flex:1;background:#0e1013;border:1px solid var(--border);color:var(--mut);
+    border-radius:8px;padding:8px 4px;font-size:12px;cursor:pointer}
+  .seg button.on{color:#fff;border-color:var(--acc);background:#1d2330}
+  .hint{color:var(--mut);font-size:12px;margin:4px 0 10px}
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#222;color:#fff;
+    padding:10px 16px;border-radius:10px;font-size:13px;opacity:0;transition:.25s;pointer-events:none;max-width:90%}
+  .toast.show{opacity:1}
+  .pos{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:6px}
+  .hidden{display:none}
+  .debug{background:#0e1013;border:1px dashed var(--mut);border-radius:10px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="debug" id="debug"></div>
+  <h1>⚡️ Hermes Trading <span id="mode" class="pill stop">PAUSIERT</span></h1>
+  <div class="tabs">
+    <div class="tab active" data-t="dash">Dashboard</div>
+    <div class="tab" data-t="sig">Signale</div>
+    <div class="tab" data-t="set">Einstellungen</div>
+    <div class="tab" data-t="pos">Positionen</div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="t-dash">
+    <div class="card">
+      <div class="row"><span class="lbl">Konto</span><span class="val" id="acc-name">—</span></div>
+      <div class="row"><span class="lbl">Balance</span><span class="val" id="acc-bal">—</span></div>
+      <div class="row"><span class="lbl">Equity</span><span class="val" id="acc-eq">—</span></div>
+      <div class="row"><span class="lbl">Freier Margin</span><span class="val" id="acc-free">—</span></div>
+      <div class="row"><span class="lbl">Offene Positionen</span><span class="val" id="acc-pos">0</span></div>
+    </div>
+    <div class="grid2">
+      <button class="btn ok" id="btn-go">🚀 GO (Live)</button>
+      <button class="btn stop" id="btn-stop">🔴 STOP (Pause)</button>
+    </div>
+    <div class="hint" id="halt-hint"></div>
+  </div>
+
+  <!-- SIGNALE -->
+  <div id="t-sig" class="hidden">
+    <div class="hint">Aktive Symbole: <span id="sig-active">—</span></div>
+    <div id="sig-list"></div>
+    <button class="btn ghost" id="btn-rescan">🔄 Neu scannen</button>
+  </div>
+
+  <!-- EINSTELLUNGEN -->
+  <div id="t-set" class="hidden">
+    <div class="card">
+      <div class="lbl" style="margin-bottom:4px">🛡 Stop Loss</div>
+      <div class="seg" id="seg-sl">
+        <button data-v="atr">ATR</button><button data-v="points">POINTS</button><button data-v="none">NONE</button>
+      </div>
+      <input type="number" id="sl_points" placeholder="SL Punkte (bei POINTS)">
+    </div>
+    <div class="card">
+      <div class="lbl" style="margin-bottom:4px">🎯 Take Profit</div>
+      <div class="seg" id="seg-tp">
+        <button data-v="atr_rr">RR</button><button data-v="points">POINTS</button><button data-v="none">NONE</button>
+      </div>
+      <input type="number" id="tp_points" placeholder="TP Punkte (bei POINTS)">
+      <input type="number" id="rr" placeholder="RR-Multiplikator (bei RR)" style="margin-top:6px">
+    </div>
+    <div class="card">
+      <div class="lbl" style="margin-bottom:4px">🔢 Lot</div>
+      <div class="seg" id="seg-lot">
+        <button data-v="risk">RISK %</button><button data-v="fixed">FIXED</button>
+      </div>
+      <input type="number" id="risk_pct" placeholder="Risiko % (bei RISK)" step="0.1">
+      <input type="number" id="lot_fixed" placeholder="Fix-Lot (bei FIXED)" step="0.01" style="margin-top:6px">
+    </div>
+    <div class="card">
+      <div class="lbl" style="margin-bottom:4px">🔀 Grid</div>
+      <div class="seg" id="seg-grid">
+        <button data-v="1">AN</button><button data-v="0">AUS</button>
+      </div>
+      <input type="number" id="grid_distance" placeholder="Distanz (Punkte)">
+      <input type="number" id="grid_levels" placeholder="Level-Anzahl" style="margin-top:6px">
+      <div class="seg" id="seg-glm" style="margin-top:6px">
+        <button data-v="fixed">FIXED</button><button data-v="martingale">MARTINGALE</button><button data-v="anti">ANTI</button>
+      </div>
+    </div>
+    <button class="btn" id="btn-save">💾 Einstellungen speichern</button>
+  </div>
+
+  <!-- POSITIONEN -->
+  <div id="t-pos" class="hidden">
+    <div id="pos-list"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ---- REQUIRED Telegram Mini App init ----
+const tg = window.Telegram && window.Telegram.WebApp;
+if (!tg) {
+  document.body.innerHTML = "<div class='wrap'><h2>Diese App muss aus Telegram heraus geöffnet werden.</h2>" +
+    "<p class='hint'>Öffne sie über den ⚡️-Button oder den Menü-Button im Telegram-Client (nicht im Browser).</p></div>";
+  throw new Error("not in telegram");
+}
+tg.ready();
+tg.expand();
+try { tg.setHeaderColor("bg_color"); tg.setBackgroundColor("bg_color"); } catch(e) {}
+
+// ---- dev debug block ----
+(function(){
+  const d = document.getElementById('debug');
+  if(!d) return;
+  const init = tg.initData || "";
+  d.innerHTML = "DEBUG | platform: " + (tg.platform||"?") +
+    " | version: " + (tg.version||"?") +
+    " | initData: " + (init ? "JA ("+init.length+" zeichen)" : "NEIN") +
+    " | isExpanded: " + (tg.isExpanded ? "JA" : "NEIN") +
+    " | start: " + (tg.initDataUnsafe && tg.initDataUnsafe.start_param ? tg.initDataUnsafe.start_param : "(kein)");
+})();
+
+const TOKEN = "hermes-trading-app-2026";
+const BASE = 'https://b09e1e938ae997a4-89-144-221-124.serveousercontent.com';;;
+  window.__SERVEO__ = 'https://11291eeaceec47be-89-144-221-124.serveousercontent.com';
+function tk(q){return (BASE + q + (q.includes('?')?'&':'?') + 'token=' + TOKEN);}
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600);}
+async function api(path, method='GET', body=null){
+  const opt={method, headers:{'Content-Type':'application/json'}};
+  if(body) opt.body=JSON.parse(JSON.stringify(body));
+  const r=await fetch(tk(path), opt);
+  if(r.status===401){toast('Nicht autorisiert');throw new Error('401');}
+  return await r.json();
+}
+// tabs
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  ['dash','sig','set','pos'].forEach(n=>document.getElementById('t-'+n).classList.add('hidden'));
+  document.getElementById('t-'+t.dataset.t).classList.remove('hidden');
+  if(t.dataset.t==='sig') loadSignals();
+  if(t.dataset.t==='pos') loadPositions();
+  if(t.dataset.t==='set') fillSettings();
+});
+// segmented helpers
+function seg(id, val){document.querySelectorAll('#'+id+' button').forEach(b=>b.classList.toggle('on', b.dataset.v===String(val)));}
+document.querySelectorAll('#seg-sl button').forEach(b=>b.onclick=()=>seg('seg-sl',b.dataset.v));
+document.querySelectorAll('#seg-tp button').forEach(b=>b.onclick=()=>seg('seg-tp',b.dataset.v));
+document.querySelectorAll('#seg-lot button').forEach(b=>b.onclick=()=>seg('seg-lot',b.dataset.v));
+document.querySelectorAll('#seg-grid button').forEach(b=>b.onclick=()=>seg('seg-grid',b.dataset.v));
+document.querySelectorAll('#seg-glm button').forEach(b=>b.onclick=()=>seg('seg-glm',b.dataset.v));
+
+// state / dashboard
+async function loadState(){
+  try{
+    const s=await api('/api/state');
+    document.getElementById('acc-name').textContent=s.account.name||'—';
+    document.getElementById('acc-bal').textContent=((s.account.balance||0).toFixed(2))+' '+(s.account.currency||'');
+    document.getElementById('acc-eq').textContent=((s.account.equity||0).toFixed(2));
+    document.getElementById('acc-free').textContent=((s.account.margin_free||0).toFixed(2));
+    document.getElementById('acc-pos').textContent=(s.positions||[]).length;
+    const m=document.getElementById('mode');
+    if(s.go){m.textContent='LIVE';m.className='pill live';}else{m.textContent='PAUSIERT';m.className='pill stop';}
+    document.getElementById('halt-hint').textContent=s.halt?'⚠️ HALT aktiv (Tagesverlust-Limit)':'';
+  }catch(e){}
+}
+// signals
+async function loadSignals(){
+  try{
+    const s=await api('/api/signals');
+    document.getElementById('sig-active').textContent=(s.active||[]).join(', ');
+    const box=document.getElementById('sig-list');box.innerHTML='';
+    if(!s.signals.length){box.innerHTML='<div class="hint">Keine aktuellen Signale.</div>';return;}
+    s.signals.forEach(sig=>{
+      const d=document.createElement('div');d.className='sig';
+      const dir=sig.action==='BUY'?'buy':'sell';
+      d.innerHTML=`<div class="top"><b>${sig.symbol}</b><span class="badge ${dir}">${sig.action} · ${sig.strategy}</span></div>
+        <div class="lbl" style="margin:4px 0">${sig.reason||''}</div>
+        <button class="btn ok" style="margin-top:6px" onclick="doTrade('${sig.symbol}','${sig.strategy}')">🚀 Jetzt handeln</button>`;
+      box.appendChild(d);
+    });
+  }catch(e){}
+}
+async function doTrade(sym, strat){
+  if(!confirm(sym+' '+strat+' ausführen?')) return;
+  try{
+    const r=await api('/api/trade','POST',{symbol:sym,strategy:strat});
+    toast(r.ok?'✅ Order ausgeführt':('❌ '+ (r.error||'fehlgeschlagen')));
+    loadState();loadPositions();
+  }catch(e){toast('Fehler');}
+}
+// settings
+async function fillSettings(){
+  try{
+    const s=await api('/api/state');const st=s.settings;
+    seg('seg-sl', st.sl_variant);document.getElementById('sl_points').value=st.sl_points;
+    seg('seg-tp', st.tp_variant);document.getElementById('tp_points').value=st.tp_points;document.getElementById('rr').value=st.rr_multiple;
+    seg('seg-lot', st.lot_mode);document.getElementById('risk_pct').value=st.risk_pct;document.getElementById('lot_fixed').value=st.lot_fixed;
+    seg('seg-grid', st.grid_enabled?1:0);document.getElementById('grid_distance').value=st.grid_distance;document.getElementById('grid_levels').value=st.grid_levels;
+    seg('seg-glm', st.grid_lot_mode);
+  }catch(e){}
+}
+async function saveSettings(){
+  const map={
+    sl_variant:document.querySelector('#seg-sl button.on')?.dataset.v,
+    sl_points:document.getElementById('sl_points').value,
+    tp_variant:document.querySelector('#seg-tp button.on')?.dataset.v,
+    tp_points:document.getElementById('tp_points').value,
+    rr_multiple:document.getElementById('rr').value,
+    lot_mode:document.querySelector('#seg-lot button.on')?.dataset.v,
+    risk_pct:document.getElementById('risk_pct').value,
+    lot_fixed:document.getElementById('lot_fixed').value,
+    grid_enabled:document.querySelector('#seg-grid button.on')?.dataset.v==='1',
+    grid_distance:document.getElementById('grid_distance').value,
+    grid_levels:document.getElementById('grid_levels').value,
+    grid_lot_mode:document.querySelector('#seg-glm button.on')?.dataset.v,
+  };
+  for(const [f,v] of Object.entries(map)){
+    if(v===undefined||v==='') continue;
+    try{await api('/api/set','POST',{field:f,value:v});}catch(e){}
+  }
+  toast('💾 Gespeichert');loadState();
+}
+document.getElementById('btn-save').onclick=saveSettings;
+// positions
+async function loadPositions(){
+  try{
+    const s=await api('/api/state');const box=document.getElementById('pos-list');box.innerHTML='';
+    if(!s.positions.length){box.innerHTML='<div class="hint">Keine offenen Positionen.</div>';return;}
+    s.positions.forEach(p=>{
+      const d=document.createElement('div');d.className='pos';
+      d.innerHTML=`<div class="row"><span><b>${p.symbol}</b> ${p.type} ${p.volume}</span>
+        <span class="val" style="color:${p.profit>=0?'var(--ok)':'var(--bad)'}">${p.profit.toFixed(2)}</span></div>
+        <button class="btn stop" style="margin-top:6px" onclick="closePos(${p.ticket})">✖ Schließen</button>`;
+      box.appendChild(d);
+    });
+  }catch(e){}
+}
+async function closePos(ticket){
+  if(!confirm('Position '+ticket+' schließen?'))return;
+  try{const r=await api('/api/close','POST',{ticket});toast(r.ok?'✅ Geschlossen':'❌ Fehler');loadPositions();loadState();}catch(e){}
+}
+// go/stop
+document.getElementById('btn-go').onclick=async()=>{await api('/api/go','POST',{go:true});toast('🚀 LIVE');loadState();};
+document.getElementById('btn-stop').onclick=async()=>{await api('/api/go','POST',{go:false});toast('🔴 Pausiert');loadState();};
+document.getElementById('btn-rescan').onclick=loadSignals;
+
+// live refresh
+loadState();
+setInterval(()=>{if(!document.getElementById('t-dash').classList.contains('hidden'))loadState();},5000);
+setInterval(()=>{if(!document.getElementById('t-pos').classList.contains('hidden'))loadPositions();},5000);
+</script>
+</body>
+</html>
